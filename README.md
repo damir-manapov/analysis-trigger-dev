@@ -94,7 +94,7 @@ const queue = await queues.retrieve(ctx.queue.id);
 console.log(queue.stats);
 ```
 
-"You can now pause entire environments or individual queues for emergency stops, and get detailed queue statistics" - Quity handy, but I didn't get how do rey resume, do they resume whole queu or handling some particular tasks? And how one defines how many queue he has? Do they do queue per task type?
+"You can now pause entire environments or individual queues for emergency stops, and get detailed queue statistics" - Quity handy, but I didn't get how do rey resume, do they resume whole queu or handling some particular tasks? And how one defines how many queue he has? Do they do queue per task type? - Usually every task type has its own queue, but you could manage that, you could cereate queues and assign tasks to them explicitly.
 
 ## Shemas
 
@@ -112,3 +112,73 @@ const myToolTask = schemaTask({
 ```
 
 They use zod for schemas. Approach looks promising
+
+## Vercel's sdk compatability
+
+Its interesting, how Trigger's tasks compatible with Vercel's AI SDK:
+
+```ts
+import { ai } from "@trigger.dev/sdk/ai";
+import { generateText } from "ai";
+
+const myToolTask = schemaTask({
+  id: "my-tool-task",
+  schema: z.object({
+    input: z.string().describe("The input to the tool"),
+  }),
+  run: async ({ input }) => {
+    // Your tool logic
+    return { result: processInput(input) };
+  },
+});
+
+// Converts a task into an AI tools for the AI SDK
+const myTool = ai.tool(myToolTask);
+
+// AI SDK function, passing in the tool we created above
+const { text } = await generateText({
+  prompt,
+  model: openai("gpt-4o"),
+  tools: { myTool },
+});
+```
+
+## Exporting logs and metrics
+
+It's considered bad practice if application itself manages its logs and metrics delivery. But still its usefull for library developer to provide a way to explicitly export logs and metrics. Trigger does that:
+
+```ts
+import { defineConfig } from "@trigger.dev/sdk";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+
+export default defineConfig({
+  project: process.env.TRIGGER_PROJECT_REF,
+  dirs: ["./src/trigger"],
+  telemetry: {
+    logExporters: [
+      new OTLPLogExporter({
+        url: "https://api.axiom.co/v1/logs",
+        headers: {
+          Authorization: `Bearer ${process.env.AXIOM_TOKEN}`,
+          "X-Axiom-Dataset": "test",
+        },
+      }),
+    ],
+    exporters: [
+      new OTLPTraceExporter({
+        url: "https://api.axiom.co/v1/traces",
+        headers: {
+          Authorization: `Bearer ${process.env.AXIOM_TOKEN}`,
+          "X-Axiom-Dataset": "test",
+        },
+      }),
+    ],
+  },
+  maxDuration: 3600,
+});
+```
+
+## Checkpoints
+
+It looks like they use https://criu.org/Main_Page for implementing checkpointing
